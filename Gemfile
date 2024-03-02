@@ -7,3 +7,5 @@ gem "rackup"
 gem "puma"
 
 gem "kamal", "~> 1.3"
+
+gem 'mime-types'
