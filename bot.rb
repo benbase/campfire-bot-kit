@@ -6,17 +6,14 @@ require "uri"
 require "open-uri"
 require 'mime/types'
 require "openai"
+require "pry"
 
 OpenAI.configure do |config|
-  config.access_token = "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"
+  config.access_token = "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"
 end
 
 # Healthcheck for Kamal
 get("/up") { "✓" }
-
-post "/inspect" do
-  raise extract_json_from(request).inspect
-end
 
 post "/email" do
   json = extract_json_from(request)
@@ -43,9 +40,12 @@ post "/phone" do
   elsif json['type'] == 'call.completed'
     # Call
     from = json['data']['object']['from']
-    body = json['data']['object']['voicemail']['url']
-    message = "📞 #{from}: #{body}"
-    send_as_bot(:phone, message)
+    vmail_url = json['data']['object']['voicemail']['url']
+    download_file(vmail_url) do |path|
+      body = transcribe(path)
+      message = "📞 #{from}: #{body}"
+      send_as_bot(:phone, message)
+    end
   end
   "ok"
 end
@@ -56,24 +56,19 @@ post "/zoom" do
   puts json.inspect
   if json['download_url']
     download_url = json['download_url']
-    message = download_url
-    # send_as_bot(:zoom, message)
-    uri = URI(download_url)
-    filename = File.basename(uri.path)
-    tmpdir = Dir.mktmpdir
-    video_path = File.join(tmpdir, filename)
-    unless File.exist?(video_path)
-      puts "Downloading file to #{video_path}"
-      URI.open(download_url) do |video|
-        File.open(video_path, "wb") do |file|
-          file.write(video.read)
+    transcript_url = json['transcript_url']
+    download_file(download_url) do |path|
+      if File.size?(path) > MIN_ZOOM_BYTES
+        send_as_bot(:zoom, "", path)
+        download_file(transcript_url) do |t_path|
+          transcript = File.read(t_path)
+          message = summarize(transcript, "Summarize the following zoom transcript in 3-5 short sentences. You don't need to mention it was a zoom call")
+          sleep 1
+          send_as_bot(:zoom, message)
         end
-      end
-    end
-    if File.size?(video_path) > MIN_ZOOM_BYTES
-      send_as_bot(:zoom, message, video_path)
-    else
-      puts "File size too small, not sending"
+      else
+        puts "File size too small, not sending"
+      end  
     end
   end
   "ok"
@@ -91,7 +86,6 @@ end
 
 post "/bots/zoom" do
   puts(extract_json_from(request).inspect)
-
 end
 
 post "/bots/medical" do
@@ -116,17 +110,6 @@ post "/bots/cobra" do
   answer = ask_assistant(assistant_id, prompt)
   puts answer.inspect
   answer
-end
-
-post "/transcribe" do
-  puts(extract_json_from(request).inspect)
-  client = OpenAI::Client.new
-  response = client.audio.transcribe(
-    parameters: {
-        model: "whisper-1",
-        file: File.open("./test.mp3", "rb"),
-    })
-  puts response["text"]
 end
 
 not_found do

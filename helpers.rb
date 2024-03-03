@@ -137,3 +137,40 @@ def get_enrollment(name:)
     Mike Wadhera,Enrolled,Anthem Silver PPO,6RK6
   EOS
 end
+
+def download_file(download_url, &block)
+  uri = URI(download_url)
+  filename = File.basename(uri.path)
+  tmpdir = Dir.mktmpdir
+  path = File.join(tmpdir, filename)
+  unless File.exist?(path)
+    puts "Downloading file to #{path}"
+    URI.open(download_url) do |download|
+      File.open(path, "wb") do |file|
+        file.write(download.read)
+        file.rewind
+        block.call(path)
+      end
+    end
+  end
+end
+
+def transcribe(path)
+  client = OpenAI::Client.new
+  response = client.audio.transcribe(
+    parameters: {
+        model: "whisper-1",
+        file: File.open(path, "rb"),
+    })
+  response['text']
+end
+
+def summarize(text, prompt='Summarize the following text in short bullets:')
+  client = OpenAI::Client.new
+  response = client.chat(
+    parameters: {
+        model: "gpt-4",
+        messages: [{ role: "user", content: "#{prompt} #{text}"}]
+    })
+  response.dig("choices", 0, "message", "content")
+end
