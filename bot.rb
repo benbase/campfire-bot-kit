@@ -5,6 +5,11 @@ require "tmpdir"
 require "uri"
 require "open-uri"
 require 'mime/types'
+require "openai"
+
+OpenAI.configure do |config|
+  config.access_token = "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"
+end
 
 # Healthcheck for Kamal
 get("/up") { "✓" }
@@ -86,6 +91,42 @@ end
 
 post "/bots/zoom" do
   puts(extract_json_from(request).inspect)
+
+end
+
+post "/bots/medical" do
+  json = extract_json_from(request)
+  puts json.inspect
+
+  assistant_id = "asst_6xWtnKPbpgEdz2YH5ex9pdsb"
+  prompt = json['message']['body']['plain'] # "Email from: michael scott subject: what is my deductible?"
+  
+  answer = ask_assistant(assistant_id, prompt)
+  puts answer.inspect
+  answer
+end
+
+post "/bots/cobra" do
+  json = extract_json_from(request)
+  puts json.inspect
+
+  assistant_id = "asst_A0Q6JIBNjQP3IXmAEj9OGc6H"
+  prompt = json['message']['body']['plain'] # from: michael scott subj: cobra body: hey when does my cobra coverage start?
+  
+  answer = ask_assistant(assistant_id, prompt)
+  puts answer.inspect
+  answer
+end
+
+post "/transcribe" do
+  puts(extract_json_from(request).inspect)
+  client = OpenAI::Client.new
+  response = client.audio.transcribe(
+    parameters: {
+        model: "whisper-1",
+        file: File.open("./test.mp3", "rb"),
+    })
+  puts response["text"]
 end
 
 not_found do

@@ -48,3 +48,92 @@ def send_as_bot(bot, message, attachment_path = nil)
 
   puts response.body
 end
+
+def ask_assistant(assistant_id, prompt)
+  client = OpenAI::Client.new
+  # Create thread
+  response = client.threads.create
+  thread_id = response["id"]
+  puts "Thread ID: #{thread_id}"
+  # Add prompt
+  client.messages.create(
+    thread_id: thread_id,
+    parameters: {
+      role: "user", # Required for manually created messages
+      content: prompt
+    }
+  )
+  # Create run
+  response = client.runs.create(thread_id: thread_id,
+    parameters: {
+      assistant_id: assistant_id
+    })
+  run_id = response['id']
+  puts "Run ID: #{run_id}"
+  # Spin
+  loop do
+    response = client.runs.retrieve(id: run_id, thread_id: thread_id)
+    status = response['status']
+
+    case status
+    when 'queued', 'in_progress', 'cancelling'
+      puts 'Sleeping'
+      sleep 0.3 # Wait and poll again
+    when 'completed'
+      puts "Completed"
+      break # Exit loop and report result to user
+    when 'requires_action'
+      puts "Requires Action"
+      # Handle tool calls (see below)
+      tools_to_call = response.dig('required_action', 'submit_tool_outputs', 'tool_calls')
+  
+      my_tool_outputs = tools_to_call.map { |tool|
+          # Call the functions based on the tool's name
+          function_name = tool.dig('function', 'name')
+          arguments = JSON.parse(
+                tool.dig("function", "arguments"),
+                { symbolize_names: true },
+          )
+          
+          tool_output = case function_name
+            when "get_enrollment"
+              puts "Calling function"
+              get_enrollment(**arguments)
+            end
+  
+          { tool_call_id: tool['id'], output: tool_output }
+      }
+  
+      client.runs.submit_tool_outputs(thread_id: thread_id, run_id: run_id, parameters: { tool_outputs: my_tool_outputs })
+    when 'cancelled', 'failed', 'expired'
+      puts response['last_error'].inspect
+      break # or `exit`
+    else
+      puts "Unknown status response: #{status}"
+      break
+    end
+  end
+  puts "Complete"
+  # Break
+  messages = client.messages.list(thread_id: thread_id)
+  messages["data"].each do |message|
+    if message["role"] == "assistant"
+      message["content"].each do |content|
+        if content["type"] == "text"
+          return content["text"]["value"]
+        end
+      end
+    end
+  end
+  return nil
+end
+
+def get_enrollment(name:)
+  return <<-EOS
+    Employee Name,Enrollment Status,Medical plan,Medical plan code
+    Michael Scott,Enrolled,Anthem Gold PPO,6RH1
+    Angela Martin,Enrolled,Anthem Gold PPO,6RH1
+    Dwight Schrute,Waived,,
+    Mike Wadhera,Enrolled,Anthem Silver PPO,6RK6
+  EOS
+end
