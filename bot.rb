@@ -20,6 +20,10 @@ post "/email" do
   puts json.inspect
   if json['body_plain']
     from = json['from']
+    if from != "mikewadhera@gmail.com"
+      puts "Not from mike's gmail. Ignoring forwarding"
+      return "ok"
+    end
     subject = json['subject']
     body = json['body_plain']
     message = "From #{from} -- #{subject}: #{body}"
